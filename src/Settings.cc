@@ -550,7 +550,8 @@ namespace ORB_SLAM3 {
             output << " ]" << endl;
         }
 
-        if(settings.sensor_ == System::STEREO || settings.sensor_ == System::IMU_STEREO){
+        /* KITTI00-02.yaml has no camera2 info */
+        if(settings.cameraType_ != Settings::Rectified && (settings.sensor_ == System::STEREO || settings.sensor_ == System::IMU_STEREO)){
             output << "\t-Camera 2 parameters (";
             if(settings.cameraType_ == Settings::PinHole || settings.cameraType_ ==  Settings::Rectified){
                 output << "Pinhole";
@@ -565,7 +566,7 @@ namespace ORB_SLAM3 {
             output << " ]" << endl;
 
             if(!settings.vPinHoleDistorsion2_.empty()){
-                output << "\t-Camera 1 distortion parameters: [ ";
+                output << "\t-Camera 2 distortion parameters: [ ";
                 for(float d : settings.vPinHoleDistorsion2_){
                     output << " " << d;
                 }

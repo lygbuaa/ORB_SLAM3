@@ -1,3 +1,9 @@
+
+
+# install pangolin
+1. https://blog.csdn.net/weixin_44354586/article/details/89399289
+2. `cd build` and `cmake ..` and `cmake --build .`
+
 # ORB-SLAM3
 
 ### V1.0, December 22th, 2021

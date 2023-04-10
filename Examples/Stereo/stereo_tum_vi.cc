@@ -197,6 +197,7 @@ int main(int argc, char **argv)
 
 
     // Stop all threads
+    cout << "slam is shutting down!" << endl;
     SLAM.Shutdown();
 
     // Tracking time statistics
@@ -216,8 +217,8 @@ int main(int argc, char **argv)
     }
     else
     {
-        SLAM.SaveTrajectoryEuRoC("CameraTrajectory.txt");
-        SLAM.SaveKeyFrameTrajectoryEuRoC("KeyFrameTrajectory.txt");
+        SLAM.SaveTrajectoryEuRoC("CameraTrajectory_tum_vi.txt");
+        SLAM.SaveKeyFrameTrajectoryEuRoC("KeyFrameTrajectory_tum_vi.txt");
     }
 
     sort(vTimesTrack.begin(),vTimesTrack.end());

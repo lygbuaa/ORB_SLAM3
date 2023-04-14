@@ -1252,11 +1252,16 @@ void System::SaveTrajectoryKITTI(const string &filename)
         Sophus::SE3f Tcw = (*lit) * Trw;
         Sophus::SE3f Twc = Tcw.inverse();
         Eigen::Matrix3f Rwc = Twc.rotationMatrix();
+        Eigen::Quaternionf q = Twc.unit_quaternion();
         Eigen::Vector3f twc = Twc.translation();
 
-        f << setprecision(9) << Rwc(0,0) << " " << Rwc(0,1)  << " " << Rwc(0,2) << " "  << twc(0) << " " <<
-             Rwc(1,0) << " " << Rwc(1,1)  << " " << Rwc(1,2) << " "  << twc(1) << " " <<
-             Rwc(2,0) << " " << Rwc(2,1)  << " " << Rwc(2,2) << " "  << twc(2) << endl;
+        // f << setprecision(9) << Rwc(0,0) << " " << Rwc(0,1)  << " " << Rwc(0,2) << " "  << twc(0) << " " <<
+        //      Rwc(1,0) << " " << Rwc(1,1)  << " " << Rwc(1,2) << " "  << twc(1) << " " <<
+        //      Rwc(2,0) << " " << Rwc(2,1)  << " " << Rwc(2,2) << " "  << twc(2) << endl;
+
+        /* use TUM format */
+        f << setprecision(9) << (*lT) << " " <<  setprecision(9) << twc(0) << " " << twc(1) << " " << twc(2) << " " \
+          << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << endl;
     }
     f.close();
 }

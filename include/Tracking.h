@@ -42,6 +42,8 @@
 #include <mutex>
 #include <unordered_set>
 
+#include "CvStereoSgbm.h"
+
 namespace ORB_SLAM3
 {
 
@@ -368,6 +370,9 @@ protected:
 
 public:
     cv::Mat mImRight;
+
+    std::shared_ptr<stereo::CvStereoSgbm> sgbm_;
+
 };
 
 } //namespace ORB_SLAM

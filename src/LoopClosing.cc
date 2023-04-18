@@ -100,6 +100,8 @@ void LoopClosing::Run()
 
         if(CheckNewKeyFrames())
         {
+            // Verbose::PrintMess("LoopClosing::Run() new keyframe", Verbose::VERBOSITY_QUIET);
+
             if(mpLastCurrentKF)
             {
                 mpLastCurrentKF->mvpLoopCandKFs.clear();

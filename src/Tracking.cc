@@ -117,6 +117,8 @@ Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer,
         }
     }
 
+    sgbm_ = std::make_shared<stereo::CvStereoSgbm>(64);
+
 #ifdef REGISTER_TIMES
     vdRectStereo_ms.clear();
     vdResizeImage_ms.clear();
@@ -1489,15 +1491,25 @@ Sophus::SE3f Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat 
     }
 
     //cout << "Incoming frame creation" << endl;
+    cv::Mat disp16 = sgbm_ -> run(mImGray, imGrayRight, timestamp);
+    cv::Mat floatDisp;
+    disp16.convertTo(floatDisp, CV_32F, 1.0f/16.0f);
 
-    if (mSensor == System::STEREO && !mpCamera2)
-        mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera);
-    else if(mSensor == System::STEREO && mpCamera2)
-        mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,mpCamera2,mTlr);
+    /* keyframe for stereo-pinhole */
+    if (mSensor == System::STEREO && !mpCamera2){
+        mCurrentFrame = Frame(mImGray,imGrayRight,floatDisp,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera);
+        // fprintf(stderr, "mImGray h: %d, w: %d, c: %d\n", mImGray.rows, mImGray.cols, mImGray.channels());
+        // fprintf(stderr, "imGrayRight h: %d, w: %d, c: %d\n", imGrayRight.rows, imGrayRight.cols, imGrayRight.channels());
+        // fprintf(stderr, "disp h: %d, w: %d, c: %d\n", disp.rows, disp.cols, disp.channels());
+    }
+    /* keyframe for stereo-fisheye */
+    else if(mSensor == System::STEREO && mpCamera2){
+        mCurrentFrame = Frame(mImGray,imGrayRight,floatDisp,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,mpCamera2,mTlr);
+    }
     else if(mSensor == System::IMU_STEREO && !mpCamera2)
-        mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,&mLastFrame,*mpImuCalib);
+        mCurrentFrame = Frame(mImGray,imGrayRight,floatDisp,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,&mLastFrame,*mpImuCalib);
     else if(mSensor == System::IMU_STEREO && mpCamera2)
-        mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,mpCamera2,mTlr,&mLastFrame,*mpImuCalib);
+        mCurrentFrame = Frame(mImGray,imGrayRight,floatDisp,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,mpCamera2,mTlr,&mLastFrame,*mpImuCalib);
 
     //cout << "Incoming frame ended" << endl;
 

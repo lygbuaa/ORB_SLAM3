@@ -97,8 +97,8 @@ Frame::Frame(const Frame &frame)
 #endif
 }
 
-
-Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera, Frame* pPrevF, const IMU::Calib &ImuCalib)
+/* keyframe for stereo-pinhole. */
+Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const cv::Mat& disp, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera, Frame* pPrevF, const IMU::Calib &ImuCalib)
     :mpcpi(NULL), mpORBvocabulary(voc),mpORBextractorLeft(extractorLeft),mpORBextractorRight(extractorRight), mTimeStamp(timeStamp), mK(K.clone()), mK_(Converter::toMatrix3f(K)), mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth),
      mImuCalib(ImuCalib), mpImuPreintegrated(NULL), mpPrevFrame(pPrevF),mpImuPreintegratedFrame(NULL), mpReferenceKF(static_cast<KeyFrame*>(NULL)), mbIsSet(false), mbImuPreintegrated(false),
      mpCamera(pCamera) ,mpCamera2(nullptr), mbHasPose(false), mbHasVelocity(false)
@@ -138,7 +138,12 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
 #ifdef REGISTER_TIMES
     std::chrono::steady_clock::time_point time_StartStereoMatches = std::chrono::steady_clock::now();
 #endif
-    ComputeStereoMatches();
+
+    /* use ORBmatcher */
+    // ComputeStereoMatches();
+    /* use disparity estimator */
+    ComputeStereoMatches(disp);
+
 #ifdef REGISTER_TIMES
     std::chrono::steady_clock::time_point time_EndStereoMatches = std::chrono::steady_clock::now();
 
@@ -746,6 +751,8 @@ void Frame::ComputeBoW()
 
 void Frame::UndistortKeyPoints()
 {
+    // std::cout << "[UndistortKeyPoints] mvKeysUn: " << mvKeysUn.size() << std::endl;
+
     if(mDistCoef.at<float>(0)==0.0)
     {
         mvKeysUn=mvKeys;
@@ -808,6 +815,38 @@ void Frame::ComputeImageBounds(const cv::Mat &imLeft)
     }
 }
 
+void Frame::ComputeStereoMatches(const cv::Mat& disp)
+{
+    mvuRight = vector<float>(N,-1.0f);
+    mvDepth = vector<float>(N,-1.0f);
+    // Set limits for search
+    const float minZ = mb;
+    const float minD = 0;
+    const float maxD = mbf/minZ;
+
+    // For each left keypoint search a match in the right image
+    size_t valid_counter = 0;
+    for(int iL=0; iL<N; iL++)
+    {
+        const cv::KeyPoint &kpL = mvKeys[iL];
+        // const int &levelL = kpL.octave;
+        const float &vL = kpL.pt.y;
+        const float &uL = kpL.pt.x;
+
+        /* pick disparity from disp16 */
+        float disp_val = disp.at<float>((int)vL, (int)uL);
+
+        if(disp_val>minD && disp_val<maxD)
+        {
+            mvDepth[iL] = mbf/disp_val;
+            mvuRight[iL] = uL - disp_val;
+            valid_counter ++;
+        }
+    }
+    fprintf(stderr, "[sgbm] valid disparity %ld output of total %ld\n", valid_counter, N);
+}
+
+
 void Frame::ComputeStereoMatches()
 {
     mvuRight = vector<float>(N,-1.0f);
@@ -845,6 +884,7 @@ void Frame::ComputeStereoMatches()
     // For each left keypoint search a match in the right image
     vector<pair<int, int> > vDistIdx;
     vDistIdx.reserve(N);
+    size_t valid_counter = 0;
 
     for(int iL=0; iL<N; iL++)
     {
@@ -852,6 +892,9 @@ void Frame::ComputeStereoMatches()
         const int &levelL = kpL.octave;
         const float &vL = kpL.pt.y;
         const float &uL = kpL.pt.x;
+
+        /* pick disparity from disp16 */
+        // float disp_val = disp.at<float>((int)vL, (int)uL);
 
         const vector<size_t> &vCandidates = vRowIndices[vL];
 
@@ -960,8 +1003,11 @@ void Frame::ComputeStereoMatches()
                 mvDepth[iL]=mbf/disparity;
                 mvuRight[iL] = bestuR;
                 vDistIdx.push_back(pair<int,int>(bestDist,iL));
+                valid_counter ++;
             }
+            // fprintf(stderr, "[sgbm] disp: %.2f, orbmatcher disp: %.2f\n", disp_val, disparity);
         }
+        
     }
 
     sort(vDistIdx.begin(),vDistIdx.end());
@@ -978,6 +1024,8 @@ void Frame::ComputeStereoMatches()
             mvDepth[vDistIdx[i].second]=-1;
         }
     }
+    // std::cout << "[ComputeStereoMatches] median: " << median << std::endl;
+    fprintf(stderr, "[ORBmatcher] valid disparity %ld output of total %ld\n", valid_counter, N);
 }
 
 
@@ -1031,7 +1079,8 @@ void Frame::setIntegrated()
     mbImuPreintegrated = true;
 }
 
-Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera, GeometricCamera* pCamera2, Sophus::SE3f& Tlr,Frame* pPrevF, const IMU::Calib &ImuCalib)
+/* keyframe for fisheye-stereo */
+Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const cv::Mat& disp, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera, GeometricCamera* pCamera2, Sophus::SE3f& Tlr,Frame* pPrevF, const IMU::Calib &ImuCalib)
         :mpcpi(NULL), mpORBvocabulary(voc),mpORBextractorLeft(extractorLeft),mpORBextractorRight(extractorRight), mTimeStamp(timeStamp), mK(K.clone()), mK_(Converter::toMatrix3f(K)),  mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth),
          mImuCalib(ImuCalib), mpImuPreintegrated(NULL), mpPrevFrame(pPrevF),mpImuPreintegratedFrame(NULL), mpReferenceKF(static_cast<KeyFrame*>(NULL)), mbImuPreintegrated(false), mpCamera(pCamera), mpCamera2(pCamera2),
          mbHasPose(false), mbHasVelocity(false)
@@ -1102,7 +1151,11 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
 #ifdef REGISTER_TIMES
     std::chrono::steady_clock::time_point time_StartStereoMatches = std::chrono::steady_clock::now();
 #endif
-    ComputeStereoFishEyeMatches();
+    /* use BFMatcher */
+    // ComputeStereoFishEyeMatches();
+    /* use disparity estimator */
+    ComputeStereoFishEyeMatches(disp);
+
 #ifdef REGISTER_TIMES
     std::chrono::steady_clock::time_point time_EndStereoMatches = std::chrono::steady_clock::now();
 
@@ -1123,6 +1176,68 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
 
 }
 
+void Frame::ComputeStereoFishEyeMatches(const cv::Mat& disp) {
+    //Speed it up by matching keypoints in the lapping area
+    std::vector<cv::KeyPoint> stereoLeft(mvKeys.begin() + monoLeft, mvKeys.end());
+    std::vector<cv::KeyPoint> stereoRight(mvKeysRight.begin() + monoRight, mvKeysRight.end());
+
+    mvLeftToRightMatch = vector<int>(Nleft,-1);
+    mvRightToLeftMatch = vector<int>(Nright,-1);
+    mvDepth = vector<float>(Nleft,-1.0f);
+    mvuRight = vector<float>(Nleft,-1);
+    mvStereo3Dpoints = vector<Eigen::Vector3f>(Nleft);
+
+    constexpr static float DIST_TH = 5.0f;
+    int nMatches = 0;
+    int nVoid = 0;
+    for(int i=0; i<stereoLeft.size(); i++){
+        const cv::KeyPoint& kpL = stereoLeft[i];
+        const float &vL = kpL.pt.y;
+        const float &uL = kpL.pt.x;
+
+        /* pick disparity from disp16 */
+        float disp_val = disp.at<float>((int)vL, (int)uL);
+        if(disp_val <= 0.0f){
+            nVoid ++;
+            continue;
+        }
+
+        const float vR = vL;// - disp_val;
+        const float uR = uL - disp_val;
+
+        float dist_min = DIST_TH;
+        const int queryIdx = i; // key_left index
+        int trainIdx = -1;      // key_right index
+        for(int j=0; j<stereoRight.size(); j++){
+            const cv::KeyPoint& kpR = stereoRight[j];
+            const float& y = kpR.pt.y;
+            const float& x = kpR.pt.x;
+            float dist = sqrt((y-vR)*(y-vR) + (x-uR)*(x-uR));
+            if(dist < dist_min){
+                trainIdx = j;
+                dist_min = dist;
+            }
+        }
+
+        if(trainIdx >= 0){
+            // fprintf(stderr, "[BFmatcher] keypoint match, dist_min: %.2f\n", dist_min);
+            Eigen::Vector3f p3D;
+            float sigma1 = mvLevelSigma2[mvKeys[queryIdx + monoLeft].octave];
+            float sigma2 = mvLevelSigma2[mvKeysRight[trainIdx + monoRight].octave];
+            float depth = static_cast<KannalaBrandt8*>(mpCamera)->TriangulateMatches(mpCamera2, mvKeys[queryIdx + monoLeft], mvKeysRight[trainIdx + monoRight], mRlr, mtlr, sigma1, sigma2, p3D);
+            if(depth > 0.0001f){
+                mvLeftToRightMatch[queryIdx + monoLeft] = trainIdx + monoRight;
+                mvRightToLeftMatch[trainIdx + monoRight] = queryIdx + monoLeft;
+                mvStereo3Dpoints[queryIdx + monoLeft] = p3D;
+                mvDepth[queryIdx + monoLeft] = depth;
+                nMatches++;
+            }
+        }
+    }
+
+    fprintf(stderr, "[BFmatcher] nVoid: %d, nMatches %d, total %d\n", nVoid, nMatches, Nleft);
+}
+
 void Frame::ComputeStereoFishEyeMatches() {
     //Speed it up by matching keypoints in the lapping area
     vector<cv::KeyPoint> stereoLeft(mvKeys.begin() + monoLeft, mvKeys.end());
@@ -1141,6 +1256,8 @@ void Frame::ComputeStereoFishEyeMatches() {
     //Perform a brute force between Keypoint in the left and right image
     vector<vector<cv::DMatch>> matches;
 
+    /* [input]  stereoLeft: 1006, stereoRight: 1003, stereoDescLeft: h-1006,w-32, stereoDescRight: h-1003,w-32 */
+    /* [output] matches: 1006*2  */
     BFmatcher.knnMatch(stereoDescLeft,stereoDescRight,matches,2);
 
     int nMatches = 0;
@@ -1152,8 +1269,20 @@ void Frame::ComputeStereoFishEyeMatches() {
             //For every good match, check parallax and reprojection error to discard spurious matches
             Eigen::Vector3f p3D;
             descMatches++;
-            float sigma1 = mvLevelSigma2[mvKeys[(*it)[0].queryIdx + monoLeft].octave], sigma2 = mvLevelSigma2[mvKeysRight[(*it)[0].trainIdx + monoRight].octave];
-            float depth = static_cast<KannalaBrandt8*>(mpCamera)->TriangulateMatches(mpCamera2,mvKeys[(*it)[0].queryIdx + monoLeft],mvKeysRight[(*it)[0].trainIdx + monoRight],mRlr,mtlr,sigma1,sigma2,p3D);
+            const cv::KeyPoint& kpL = mvKeys[(*it)[0].queryIdx + monoLeft];
+            const cv::KeyPoint& kpR = mvKeysRight[(*it)[0].trainIdx + monoRight];
+            float sigma1 = mvLevelSigma2[kpL.octave];
+            float sigma2 = mvLevelSigma2[kpR.octave];
+
+            // const float &vL = kpL.pt.y;
+            // const float &uL = kpL.pt.x;
+            // const float &vR = kpR.pt.y;
+            // const float &uR = kpR.pt.x;
+            /* pick disparity from disp16 */
+            // float disp_val = disp.at<float>((int)vL, (int)uL);
+            // fprintf(stderr, "[BFmatcher] disp: %.2f, dx: %.2f, dy: %.2f\n", disp_val, (uL-uR), (vL-vR));
+            
+            float depth = static_cast<KannalaBrandt8*>(mpCamera)->TriangulateMatches(mpCamera2,kpL,kpR,mRlr,mtlr,sigma1,sigma2,p3D);
             if(depth > 0.0001f){
                 mvLeftToRightMatch[(*it)[0].queryIdx + monoLeft] = (*it)[0].trainIdx + monoRight;
                 mvRightToLeftMatch[(*it)[0].trainIdx + monoRight] = (*it)[0].queryIdx + monoLeft;
@@ -1163,6 +1292,8 @@ void Frame::ComputeStereoFishEyeMatches() {
             }
         }
     }
+
+    fprintf(stderr, "[BFmatcher] valid disparity %ld output of total %ld\n", nMatches, Nleft);
 }
 
 bool Frame::isInFrustumChecks(MapPoint *pMP, float viewingCosLimit, bool bRight) {
